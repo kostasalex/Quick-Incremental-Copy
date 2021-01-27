@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "copy.h"
+#include "edit.h"
 
 /* in case of Current or Parrent directory returns 0*/
 int NoDotAndDotDot(struct dirent *d){
@@ -101,6 +101,7 @@ char *srcPath, char *destPath){
                     return -1;
 
             copyDir(next_dir_src, next_dir_dest, srcFullPath, destFullPath);
+            closedir(next_dir_src);closedir(next_dir_dest);
         }
 
     }
@@ -146,9 +147,7 @@ char *srcPath, char *destPath){
 
     struct dirent * dirent_src, *dirent_dest;
 
-    DIR *next_dir_src, *next_dir_dest;
-
-    char buffer[300], destFullPath[300], srcFullPath[300];
+    char destFullPath[300], srcFullPath[300];
     int srcFound;
 
     while ((dirent_dest = readdir(dir_dest)) != NULL){
@@ -194,6 +193,7 @@ char *srcPath, char *destPath){
                 printf("%s\n", destFullPath);
                 remove(destFullPath);
                 stats.delCount++;
+                closedir(dir);
             }
         }
         /* Source found */
@@ -213,10 +213,12 @@ char *srcPath, char *destPath){
                         return -1;
 
                 delete(next_dir_src, next_dir_dest, srcFullPath, destFullPath);
-
+                
+                closedir(next_dir_src);closedir(next_dir_dest);
             }
         }
     }
+    return 0;
 }
 
 
@@ -253,9 +255,9 @@ int deleteDir(DIR *dir, char* fullPath){
             printf("%s\n",pathName);
             remove(pathName);
             stats.delCount++;
+
+            closedir(nextdir);
         }
     }
+    return 0;
 }
-
-
-
