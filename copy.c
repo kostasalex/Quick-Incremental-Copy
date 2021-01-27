@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "copy.h"
 
+/* in case of Current or Parrent directory returns 0*/
 int NoDotAndDotDot(struct dirent *d){
     return (strcmp(d->d_name, ".") && strcmp(d->d_name, ".."));
 }
@@ -11,47 +14,27 @@ int NoDotAndDotDot(struct dirent *d){
 int copyDir(DIR *dir_src, DIR *dir_dest,\
 char *srcPath, char *destPath){
 
-    static int firstcall = 0;
-    firstcall++;
-
-    if(firstcall == 1){
-        //now = time(0);
-    }
-
-    struct stat statbuf;
-
-    //if not first call call close dir..
-    int counter;
-
     struct dirent * dirent_src, *dirent_dest;
-
-    DIR *next_dir_src, *next_dir_dest;
-
-    char buffer[300], destFullPath[300], srcFullPath[300];
+    char destFullPath[300], srcFullPath[300];
     int destFound;
 
+    /* Loop every file/directory in source path */
     while ((dirent_src = readdir(dir_src)) != NULL){
-    printf("%ld\n", stats.start);
+
         destFound = 0;
-        /* If it's not directory or it's current/parent directory skip */
-        if(dirent_src->d_type != DT_DIR || !NoDotAndDotDot(dirent_src))
-            continue;
+
+        //If it's current/parent directory skip
+        if(!NoDotAndDotDot(dirent_src))continue;
         
+        stats.total++;//Total files/directories in source
+
         //Source full path name
         sprintf(srcFullPath,"%s/%s", srcPath,dirent_src->d_name);
 
-        /* Check if folder is created during the copy proccess */
-        stat(srcFullPath, &statbuf);
-        long long int  test;
-        //if((test = statbuf.st_mtime - stats.start) < 0){
-        //    continue;
-        //}
-        //printf("%lld\n%ld\n%ld\n ", test, statbuf.st_atime, stats.start);
-
-        /* Else find the directory in destination */
+        /* Search if a copy exists in destination path */
         while((dirent_dest = readdir(dir_dest)) != NULL){
 
-            if(dirent_dest->d_type != DT_DIR || !NoDotAndDotDot(dirent_dest))
+            if(!NoDotAndDotDot(dirent_dest))
                 continue;
 
             if(!strcmp(dirent_src->d_name, dirent_dest->d_name)){
@@ -60,25 +43,219 @@ char *srcPath, char *destPath){
             }
 
         }
-
+        rewinddir(dir_dest);
+        /* Destination full path name */
         sprintf(destFullPath,"%s/%s", destPath, dirent_src->d_name);
-        //Folder in destination directory not found, create new.
+
+        struct stat srcstat;
+        stat(srcFullPath, &srcstat);
+
+        /* Destination not found Create new directory or copy file */
         if(!destFound){
-            if(mkdir(destFullPath, 0700) == -1)
-                return -1;
-            //printf("%s\n", destFullPath);
-            stats.dirCount++;
+
+            //Create new directory
+            if(dirent_src->d_type == DT_DIR){
+                if(mkdir(destFullPath, 0700) == -1)
+                    return -1;    
+                stats.copyCount++;
+                printf("%s\n",destFullPath);  
+            }
+            //Create new file
+            else if(dirent_src->d_type == DT_REG){
+                if(copyFile(srcFullPath, destFullPath, srcstat.st_size)==-1)
+                    return -1;
+                stats.bytes += srcstat.st_size;
+                stats.copyCount++;
+                printf("%s\n",destFullPath);
+            }
+
+        }
+        /* If destination file is different from source create new */
+        else{ 
+            //Check if it's file
+            if(dirent_src->d_type == DT_REG){
+                    struct stat deststat;
+                    stat(srcFullPath, &deststat);
+
+                    //Check if the files are different
+                    if(deststat.st_size != srcstat.st_size  || \
+                        deststat.st_mtime < srcstat.st_mtime){
+                        if(copyFile(srcFullPath, destFullPath, srcstat.st_size)==-1)
+                            return -1;
+                        stats.bytes += srcstat.st_size;
+                        stats.copyCount++;
+                        printf("%s\n",destFullPath);
+                    }
+            }
+
         }
 
-        /* Search recursively in sub folders */
-        if((next_dir_src = opendir(srcFullPath)) == NULL)
-                return -1;
+        if(dirent_src->d_type == DT_DIR){
 
-        if((next_dir_dest = opendir(destFullPath)) == NULL)
-                return -1;
+            /* Search recursively in sub directories */
+            DIR *next_dir_src, *next_dir_dest;
+            if((next_dir_src = opendir(srcFullPath)) == NULL)
+                    return -1;
 
-        copyDir(next_dir_src, next_dir_dest, srcFullPath, destFullPath);
+            if((next_dir_dest = opendir(destFullPath)) == NULL)
+                    return -1;
+
+            copyDir(next_dir_src, next_dir_dest, srcFullPath, destFullPath);
+        }
+
     }
 
     return 0;
 }
+
+
+
+int copyFile(char *srcFullName ,char *destFullName, int size){
+    int infile, outfile;
+    ssize_t nread;
+    
+    char buffer[size];
+
+    if((infile = open(srcFullName , O_RDONLY)) == -1)
+        return(-1);
+    
+    if((outfile = open(destFullName, O_WRONLY|O_CREAT|O_TRUNC, 0644)) == -1){
+        close ( infile );
+        return(-2);
+    }
+
+    while((nread = read(infile, buffer, size )) > 0 ){
+        if(write(outfile, buffer ,nread) < nread){
+        close(infile);close(outfile);return(-3);
+        }
+    }
+    close(infile);close(outfile);
+
+    /* Copy permissions */
+    struct stat statbuf;
+    stat(srcFullName, &statbuf);
+    chmod(destFullName, statbuf.st_mode);
+
+    if(nread == -1)return(-4);
+    else return(0);
+}
+
+
+int delete(DIR *dir_src, DIR *dir_dest,\
+char *srcPath, char *destPath){
+
+    struct dirent * dirent_src, *dirent_dest;
+
+    DIR *next_dir_src, *next_dir_dest;
+
+    char buffer[300], destFullPath[300], srcFullPath[300];
+    int srcFound;
+
+    while ((dirent_dest = readdir(dir_dest)) != NULL){
+
+        srcFound = 0;
+
+        /* If it's current/parent directory skip */
+        if(!NoDotAndDotDot(dirent_dest))continue;
+        
+        //dest full path name
+        sprintf(destFullPath,"%s/%s", destPath, dirent_dest->d_name);
+
+        /* Else find the file/directory in source */
+        while((dirent_src = readdir(dir_src)) != NULL){
+
+            if(!strcmp(dirent_src->d_name, dirent_dest->d_name)){
+                srcFound = 1;
+                break;
+            }
+        }
+        rewinddir(dir_src);
+
+
+        /* Source not found delete file/directory */
+        if(!srcFound){
+
+            //In case of file just delete it
+            if(dirent_dest->d_type != DT_DIR){
+                if(remove(destFullPath) == 0)
+                    stats.delCount++;
+                else 
+                    printf("Couldn't remove :\n");
+                printf("%s\n", destFullPath);
+            }
+
+            //In case of directory remove all sub directories/files recursively
+            else{
+
+                DIR *dir;
+                if((dir = opendir(destFullPath)) == NULL)
+                    return -1;
+                deleteDir(dir, destFullPath);
+                printf("%s\n", destFullPath);
+                remove(destFullPath);
+                stats.delCount++;
+            }
+        }
+        /* Source found */
+        else{
+
+            //Source full path name
+            sprintf(srcFullPath,"%s/%s", srcPath,dirent_src->d_name);
+
+            if(dirent_src->d_type == DT_DIR){
+
+                /* Search recursively in sub directories */
+                DIR *next_dir_src, *next_dir_dest;
+                if((next_dir_src = opendir(srcFullPath)) == NULL)
+                        return -1;
+
+                if((next_dir_dest = opendir(destFullPath)) == NULL)
+                        return -1;
+
+                delete(next_dir_src, next_dir_dest, srcFullPath, destFullPath);
+
+            }
+        }
+    }
+}
+
+
+int deleteDir(DIR *dir, char* fullPath){
+
+    struct dirent * dirent;
+
+    char pathName[300];
+    static int counter = 0;
+
+    while ((dirent = readdir(dir)) != NULL){
+        counter++;
+        /* If it's current/parent directory skip */
+        if(!NoDotAndDotDot(dirent))continue;
+
+        //dest full path name
+        sprintf(pathName,"%s/%s", fullPath, dirent->d_name);
+        if(dirent->d_type != DT_DIR){
+            if(remove(pathName) == 0)
+                stats.delCount++;
+            else 
+                printf("Couldn't remove :\n");
+            printf("%s\n", pathName);
+        }
+
+        //In case of directory remove all sub directories/files recursively
+        else{
+
+            DIR *nextdir;
+            if((nextdir = opendir(pathName)) == NULL)
+                return -1;
+
+            deleteDir(nextdir, pathName);
+            printf("%s\n",pathName);
+            remove(pathName);
+            stats.delCount++;
+        }
+    }
+}
+
+
+

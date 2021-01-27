@@ -2,8 +2,12 @@
 #include <time.h>
 struct Stats
 {
-    int dirCount;
+    int copyCount;
+    int delCount;
+    int total;
     time_t start;
+    int bytes;
+    
 
 }stats;
 
