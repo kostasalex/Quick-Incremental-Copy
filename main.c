@@ -67,6 +67,7 @@ int main(int argc, char * argv []) {
 
 int inputHandler(int argc, char *argv[]){
 
+
     if(argc >= 3){//Valid #arguments
 
         /* Read source directory */
@@ -80,6 +81,16 @@ int inputHandler(int argc, char *argv[]){
                 return -1;
             else dir_dest = opendir(argv[2]);
 
+        }
+
+        /* Check if destination path is within source*/
+        char *src_path = realpath(argv[1], NULL);
+        char *dest_path = realpath(argv[2], NULL);
+        if (src_path != NULL && dest_path != NULL) {
+            if (strstr(dest_path, src_path) == dest_path) {
+                printf("Error: Destination path is within the source path\n");
+                return -1;
+            }
         }
 
         /* Read input flags if exists */
