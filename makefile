@@ -1,20 +1,26 @@
 EXECUTABLE = quic
 
+SRC = src
+INC = include
+
+SOURCE = $(wildcard $(SRC)/*.c)
+	
+OBJECT = $(patsubst %,$(SRC)/%, $(notdir $(SOURCE:.c=.o)))
+
 CC = gcc
-CFLAGS = -c -g -Wall
+CFLAGS = -Wall -c -g -I$(INC)
 
-$(EXECUTABLE): main.o edit.o
-	@echo " Compile quic ...";
-	$(CC) -o $(EXECUTABLE) main.o edit.o
-	
-main.o: main.c edit.h
-	$(CC) $(CFLAGS) main.c
 
-school.o: edit.c edit.h
-	$(CC) $(CFLAGS) edit.c
+$(EXECUTABLE) : $(OBJECT)
+	@echo "$ Compiling...$(NC)"
+	$(CC) -o $@ $^
 	
-.phony: clean
+$(SRC)/%.o : $(SRC)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+
+.PHONY: clean
 
 clean:
 	@echo " Cleaning . . ."
-	rm -f *.o $(EXECUTABLE)
+	rm -f $(OBJECT) $(EXECUTABLE)
